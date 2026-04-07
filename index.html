@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <title>電漿急急棒：終極挑戰修復版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #020205; font-family: 'Microsoft JhengHei', sans-serif; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<script>
+let level = 1;
+let gameState = "INSTRUCTION"; 
+let gameStarted = false;
+let boundaries = [];
+let playerSize = 8;
+let startArea = [], endArea = [];
+let startCenter, endCenter;
+let difficulty = "普通"; 
+let pathWidth = 120;
+let jitterLevel = 3;
+let isUltimate = false; 
+let resetTimer = 5; // 倒數計時秒數
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  generateLevel(level);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  generateLevel(level);
+}
+
+function generateLevel(lvl) {
+  boundaries = []; startArea = []; endArea = []; gameStarted = false;
+  
+  if (difficulty === "簡單") { pathWidth = 180; jitterLevel = 2; }
+  else if (difficulty === "普通") { pathWidth = 110; jitterLevel = 4; }
+  else if (difficulty === "困難") { pathWidth = 70; jitterLevel = 7; }
+
+  if (isUltimate) {
+    pathWidth = 85; 
+    jitterLevel = 6; 
+  }
+
+  let nodes = [];
+  let nodeCount = isUltimate ? 10 : (2 + floor(lvl / 2)); 
+  if (nodeCount > 8 && !isUltimate) nodeCount = 8; 
+
+  nodes.push(createVector(80, height / 2));
+  for (let i = 1; i < nodeCount; i++) {
+    nodes.push(createVector((width / nodeCount) * i, random(150, height - 150)));
+  }
+  nodes.push(createVector(width - 80, height / 2));
+
+  let upPoints = [], downPoints = [];
+
+  for (let i = 0; i < nodes.length - 1; i++) {
+    let p1 = nodes[i], p2 = nodes[i+1];
+    let angle = atan2(p2.y - p1.y, p2.x - p1.x);
+    let s = sin(angle) * (pathWidth / 2);
+    let c = cos(angle) * (pathWidth / 2);
+
+    let p1_up = createVector(p1.x + s, p1.y - c);
+    let p1_down = createVector(p1.x - s, p1.y + c);
+    let p2_up = createVector(p2.x + s, p2.y - c);
+    let p2_down = createVector(p2.x - s, p2.y + c);
+
+    addBoundary(p1_up.x, p1_up.y, p2_up.x, p2_up.y);
+    addBoundary(p1_down.x, p1_down.y, p2_down.x, p2_down.y);
+
+    if (i > 0) {
+      addBoundary(upPoints[upPoints.length-1].x, upPoints[upPoints.length-1].y, p1_up.x, p1_up.y);
+      addBoundary(downPoints[downPoints.length-1].x, downPoints[downPoints.length-1].y, p1_down.x, p1_down.y);
+    }
+    
+    upPoints.push(p2_up); downPoints.push(p2_down);
+
+    if (i === 0) {
+      startArea = [p1_up, p1_down, createVector(p1.x+30-s, p1.y+c), createVector(p1.x+30+s, p1.y-c)];
+      startCenter = p1.copy();
+    }
+    if (i === nodes.length - 2) {
+      endArea = [p2_up, p2_down, createVector(p2.x-30-s, p2.y+c), createVector(p2.x-30+s, p2.y-c)];
+      endCenter = p2.copy();
+    }
+  }
+}
+
+function addBoundary(x1, y1, x2, y2) {
+  boundaries.push({ p1: createVector(x1, y1), p2: createVector(x2, y2) });
+}
+
+function draw() {
+  if (isUltimate) background(15, 5, 5);
+  else background(5, 5, 12);
+
+  if (gameState === "INSTRUCTION") {
+    drawBox("遊戲說明", "歡迎遊玩電流急急棒\n\n請將滑鼠移至綠色起點\n小心移動滑鼠不要碰到電流\n抵達紅色終點後即通關", color(255, 255, 255, 40));
+  } else if (gameState === "CONGRATS_10") {
+    drawBox("恭喜過完第十關！", "最後一關為【終極關卡】\n\n準備好迎接最強大的電漿干擾嗎？", color(255, 0, 0, 80));
+  } else if (gameState === "PLAY") {
+    drawGlowingZones();
+    drawElectricBoundaries();
+    checkCollision();
+    drawPlayer();
+    drawUI();
+  } else if (gameState === "SELECT_DIFFICULTY") {
+    drawDifficultyMenu();
+  } else if (gameState === "WIN_CELEBRATION") {
+    drawWinBox();
+  } else {
+    drawEndScreen();
+  }
+}
+
+function drawBox(title, msg, bgColor) {
+  background(0, 150);
+  push();
+  rectMode(CENTER);
+  fill(bgColor);
+  stroke(255, 100);
+  strokeWeight(2);
+  rect(width/2, height/2, 500, 300, 20);
+  noStroke(); fill(255); textAlign(CENTER, CENTER);
+  textSize(32); text(title, width/2, height/2 - 90);
+  textSize(20); text(msg, width/2, height/2);
+  fill(0, 255, 255); textSize(16); text("—— 點擊畫面繼續 ——", width/2, height/2 + 100);
+  pop();
+}
+
+function drawWinBox() {
+  background(0, 100);
+  push();
+  rectMode(CENTER);
+  fill(255, 255, 255, 200); // 白色半透明框
+  stroke(255);
+  strokeWeight(3);
+  rect(width/2, height/2, 500, 300, 20);
+  
+  noStroke();
+  fill(0); // 黑色文字在白框上較清楚
+  textAlign(CENTER, CENTER);
+  textSize(36); textStyle(BOLD);
+  text("🎉 完美通關！", width/2, height/2 - 60);
+  
+  textSize(24); textStyle(NORMAL);
+  text("你已征服所有電路！", width/2, height/2);
+  
+  fill(255, 0, 0);
+  textSize(28);
+  text(resetTimer + " 秒後將重新進入遊戲...", width/2, height/2 + 70);
+  pop();
+  
+  // 透過 frameCount 簡單處理倒數
+  if (frameCount % 60 === 0 && resetTimer > 0) {
+    resetTimer--;
+    if (resetTimer === 0) {
+      restartGame();
+    }
+  }
+}
+
+function restartGame() {
+  level = 1;
+  isUltimate = false;
+  difficulty = "普通";
+  resetTimer = 5;
+  gameState = "INSTRUCTION";
+  generateLevel(level);
+}
+
+function drawGlowingZones() {
+  noStroke();
+  drawingContext.shadowBlur = 30;
+  drawingContext.shadowColor = 'rgba(0, 255, 100, 0.8)';
+  fill(0, 255, 100, 180 + sin(frameCount * 0.1) * 40);
+  beginShape(); for(let p of startArea) vertex(p.x, p.y); endShape(CLOSE);
+  drawingContext.shadowColor = 'rgba(255, 0, 50, 0.8)';
+  fill(255, 0, 50, 220);
+  beginShape(); for(let p of endArea) vertex(p.x, p.y); endShape(CLOSE);
+  drawingContext.shadowBlur = 0;
+}
+
+function drawElectricBoundaries() {
+  drawingContext.shadowBlur = 15;
+  drawingContext.shadowColor = isUltimate ? 'red' : 'cyan';
+  
+  let shift = isUltimate ? sin(frameCount * 0.05) * 20 : 0;
+
+  for (let b of boundaries) {
+    stroke(isUltimate ? color(255, 50, 0) : color(0, 180, 255), 180); 
+    strokeWeight(isUltimate ? 4 : 3);
+    line(b.p1.x, b.p1.y + shift, b.p2.x, b.p2.y + shift);
+    
+    if (gameStarted) {
+      stroke(255, 230); strokeWeight(1);
+      line(b.p1.x + random(-jitterLevel, jitterLevel), b.p1.y + shift + random(-jitterLevel, jitterLevel), 
+           b.p2.x + random(-jitterLevel, jitterLevel), b.p2.y + shift + random(-jitterLevel, jitterLevel));
+    }
+  }
+  drawingContext.shadowBlur = 0;
+}
+
+function drawPlayer() {
+  noStroke(); fill(255, 255, 0); ellipse(mouseX, mouseY, playerSize);
+}
+
+function drawUI() {
+  fill(255, 150); textAlign(LEFT); textSize(16);
+  let txt = isUltimate ? "關卡: FINAL ULTIMATE" : "關卡: " + level;
+  text(txt + " | 模式: " + difficulty, 20, 30);
+}
+
+function checkCollision() {
+  let shift = isUltimate ? sin(frameCount * 0.05) * 20 : 0;
+  if (dist(mouseX, mouseY, startCenter.x, startCenter.y + shift) < pathWidth/2) gameStarted = true;
+  if (!gameStarted) return;
+
+  for (let b of boundaries) {
+    let p1_shifted = createVector(b.p1.x, b.p1.y + shift);
+    let p2_shifted = createVector(b.p2.x, b.p2.y + shift);
+    let d = distToSegment(createVector(mouseX, mouseY), p1_shifted, p2_shifted);
+    if (d < playerSize/2 + 1.5) { gameState = "FAIL"; gameStarted = false; }
+  }
+
+  if (dist(mouseX, mouseY, endCenter.x, endCenter.y + shift) < pathWidth/2) {
+    if (level === 5 && !isUltimate) {
+       gameState = "SELECT_DIFFICULTY";
+    } else if (level === 10) {
+       gameState = "CONGRATS_10";
+    } else if (isUltimate) {
+       gameState = "WIN_CELEBRATION";
+       resetTimer = 5; // 初始化倒數
+       gameStarted = false;
+    } else {
+       level++; generateLevel(level);
+    }
+  }
+}
+
+function drawDifficultyMenu() {
+  background(0, 240);
+  fill(255); textAlign(CENTER); textSize(32);
+  text("系統升級！請選擇接下來的難度", width/2, height/2 - 120);
+  btn(width/2, height/2 - 30, "簡單模式", color(0, 200, 100));
+  btn(width/2, height/2 + 50, "普通模式", color(200, 200, 0));
+  btn(width/2, height/2 + 130, "困難模式", color(255, 50, 50));
+}
+
+function btn(x, y, t, c) {
+  fill(c); rect(x-150, y-30, 300, 60, 10);
+  fill(0); textSize(24); text(t, x, y + 8);
+}
+
+function drawEndScreen() {
+  background(0, 230);
+  fill(255, 50, 50); textAlign(CENTER); textSize(45);
+  text("觸電失敗！", width/2, height/2 - 20);
+  fill(255); textSize(20); text("點擊畫面重試本關", width/2, height/2 + 60);
+}
+
+function mousePressed() {
+  if (gameState === "INSTRUCTION") { gameState = "PLAY"; }
+  else if (gameState === "CONGRATS_10") { isUltimate = true; level = 11; generateLevel(level); gameState = "PLAY"; }
+  else if (gameState === "SELECT_DIFFICULTY") {
+    let x = width/2, y = height/2;
+    if (mouseX > x-150 && mouseX < x+150) {
+      if (mouseY > y-60 && mouseY < y) { difficulty = "簡單"; re(); }
+      else if (mouseY > y+20 && mouseY < y+80) { difficulty = "普通"; re(); }
+      else if (mouseY > y+100 && mouseY < y+160) { difficulty = "困難"; re(); }
+    }
+  } else if (gameState === "FAIL") { generateLevel(level); gameState = "PLAY"; }
+}
+
+function re() { level++; generateLevel(level); gameState = "PLAY"; }
+
+function distToSegment(p, v, w) {
+  let l2 = (v.x-w.x)**2 + (v.y-w.y)**2;
+  if (l2 == 0) return dist(p.x, p.y, v.x, v.y);
+  let t = Math.max(0, Math.min(1, ((p.x-v.x)*(w.x-v.x)+(p.y-v.y)*(w.y-v.y))/l2));
+  return dist(p.x, p.y, v.x + t*(w.x-v.x), v.y + t*(w.y-v.y));
+}
+</script>
+</body>
+</html>
